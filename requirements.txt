@@ -1,0 +1,1 @@
+!pip install scikit-learn imbalanced-learn matplotlib seaborn pandas numpy -q
