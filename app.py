@@ -1,316 +1,204 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OrdinalEncoder, StandardScaler
+from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, roc_auc_score, roc_curve, f1_score
+from sklearn.metrics import accuracy_score
 from imblearn.over_sampling import SMOTE
-import warnings
+import matplotlib.pyplot as plt
 
-warnings.filterwarnings("ignore")
+st.set_page_config(page_title="Telecom Customer Churn Prediction", layout="wide")
+st.title("Telecom Customer Churn Prediction App")
 
-# ==================== PAGE CONFIGURATION ====================
-st.set_page_config(
-    page_title="Telecom Churn Analysis",
-    layout="wide",
-    initial_sidebar_state="expanded",
-    menu_items={"About": "Telecom Customer Churn Prediction Dashboard"}
-)
+# -------------------- CSV Upload --------------------
+uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
+if uploaded_file:
+    df = pd.read_csv(uploaded_file)
+    df.columns = df.columns.str.strip().str.lower()
+    st.dataframe(df.head())
 
-# ==================== CUSTOM CSS STYLING ====================
-st.markdown("""
-    <style>
-        .main-header {
-            font-size: 2.5rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 10px;
-        }
-        .metric-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 20px;
-            border-radius: 10px;
-            color: white;
-            text-align: center;
-        }
-        .section-header {
-            font-size: 1.8rem;
-            font-weight: 600;
-            margin-top: 30px;
-            margin-bottom: 15px;
-            border-bottom: 3px solid #667eea;
-            padding-bottom: 10px;
-        }
-        .success-box {
-            background-color: #d4edda;
-            border-left: 4px solid #28a745;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 10px 0;
-        }
-        .info-box {
-            background-color: #d1ecf1;
-            border-left: 4px solid #17a2b8;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 10px 0;
-        }
-    </style>
-""", unsafe_allow_html=True)
+    # -------------------- Preprocessing --------------------
+    for col in ['totalcharges', 'monthlycharges', 'tenure']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            df[col].fillna(df[col].median(), inplace=True)
 
-# ==================== UTILITY FUNCTIONS ====================
-@st.cache_data
-def load_and_clean_data(file):
-    """Load and clean dataset"""
-    df = pd.read_csv(file)
-    df['TotalCharges'] = pd.to_numeric(df['TotalCharges'], errors='coerce')
-    df['TotalCharges'].fillna(df['TotalCharges'].median(), inplace=True)
-    return df
+    if 'churn' not in df.columns:
+        st.error("Target column 'churn' missing!")
+        st.stop()
 
-@st.cache_resource
-def prepare_data(df):
-    """Prepare data for modeling"""
-    y = df['Churn']
-    X = df.drop(['customerID', 'Churn'], axis=1)
-    
-    categorical_cols = X.select_dtypes(include=['object']).columns.tolist()
-    oe = OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1)
-    X[categorical_cols] = oe.fit_transform(X[categorical_cols])
-    
-    return X, y, categorical_cols, oe
+    y = df['churn'].apply(lambda x: 1 if str(x).lower() == 'yes' else 0)
+    X = df.drop(['customerid', 'churn'], axis=1, errors='ignore')
 
-def create_eda_visualizations(df):
-    """Create EDA visualizations"""
-    fig, axes = plt.subplots(2, 3, figsize=(16, 10))
-    fig.suptitle("Telecom Customer Churn - Key Patterns", fontsize=16, fontweight='bold')
-    fig.patch.set_facecolor('white')
-    
-    # 1. Churn Distribution (Pie)
-    churn_counts = df['Churn'].value_counts()
-    axes[0, 0].pie(churn_counts, labels=churn_counts.index, autopct='%1.1f%%',
-                   colors=['#2ecc71', '#e74c3c'], startangle=90)
-    axes[0, 0].set_title('Churn Distribution', fontweight='bold')
-    
-    # 2. Churn by Contract Type
-    contract_churn = pd.crosstab(df['Contract'], df['Churn'], normalize='index') * 100
-    contract_churn.plot(kind='bar', ax=axes[0, 1], color=['#2ecc71', '#e74c3c'])
-    axes[0, 1].set_title('Churn by Contract Type (%)', fontweight='bold')
-    axes[0, 1].set_ylabel('Percentage')
-    axes[0, 1].tick_params(axis='x', rotation=45)
-    
-    # 3. Monthly Charges by Churn
-    df.boxplot(column='MonthlyCharges', by='Churn', ax=axes[0, 2])
-    axes[0, 2].set_title('Monthly Charges by Churn', fontweight='bold')
-    axes[0, 2].set_xlabel('Churn Status')
-    axes[0, 2].set_ylabel('Monthly Charges ($)')
-    
-    # 4. Tenure Distribution
-    axes[1, 0].hist([df[df['Churn']=='No']['Tenure'], df[df['Churn']=='Yes']['Tenure']],
-                    bins=30, label=['No Churn', 'Churn'], color=['#2ecc71', '#e74c3c'], alpha=0.7)
-    axes[1, 0].set_title('Tenure Distribution by Churn', fontweight='bold')
-    axes[1, 0].set_xlabel('Tenure (Months)')
-    axes[1, 0].set_ylabel('Count')
-    axes[1, 0].legend()
-    
-    # 5. Churn by Internet Service
-    internet_churn = pd.crosstab(df['InternetService'], df['Churn'], normalize='index') * 100
-    internet_churn.plot(kind='bar', ax=axes[1, 1], color=['#2ecc71', '#e74c3c'])
-    axes[1, 1].set_title('Churn by Internet Service (%)', fontweight='bold')
-    axes[1, 1].set_ylabel('Percentage')
-    axes[1, 1].tick_params(axis='x', rotation=45)
-    
-    # 6. Total Charges by Churn
-    df.boxplot(column='TotalCharges', by='Churn', ax=axes[1, 2])
-    axes[1, 2].set_title('Total Charges by Churn', fontweight='bold')
-    axes[1, 2].set_xlabel('Churn Status')
-    axes[1, 2].set_ylabel('Total Charges ($)')
-    
-    plt.tight_layout()
-    return fig
+    # Identify categorical columns
+    cat_cols = X.select_dtypes(include=['object']).columns.tolist()
+    if cat_cols:
+        oe = OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1)
+        X[cat_cols] = oe.fit_transform(X[cat_cols])
 
-def train_models(X_train_scaled, X_test_scaled, y_train, y_test):
-    """Train and evaluate models"""
+    # Fill numeric NaNs
+    X = X.fillna(X.median(numeric_only=True))
+
+    # Balance dataset using SMOTE
+    X_bal, y_bal = SMOTE(random_state=42).fit_resample(X, y)
+
+    # Split and scale
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_bal, y_bal, test_size=0.2, random_state=42, stratify=y_bal
+    )
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    # -------------------- Train Models --------------------
     models = {
-        "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42),
-        "Random Forest": RandomForestClassifier(n_estimators=150, max_depth=15, random_state=42, n_jobs=-1),
-        "Gradient Boosting": GradientBoostingClassifier(n_estimators=100, random_state=42)
+        'Logistic Regression': LogisticRegression(max_iter=1000, random_state=42),
+        'Random Forest': RandomForestClassifier(n_estimators=150, max_depth=15, random_state=42),
+        'Gradient Boosting': GradientBoostingClassifier(n_estimators=100, random_state=42)
     }
-    
+
     results = {}
+    trained_models = {}
     for name, model in models.items():
         model.fit(X_train_scaled, y_train)
         y_pred = model.predict(X_test_scaled)
-        y_pred_proba = model.predict_proba(X_test_scaled)[:, 1]
-        
         results[name] = {
-            "Accuracy": accuracy_score(y_test, y_pred),
-            "ROC-AUC": roc_auc_score(y_test, y_pred_proba),
-            "F1": f1_score(y_test, y_pred),
-            "Model": model
+            'accuracy': accuracy_score(y_test, y_pred)
         }
-    
-    return results
+        trained_models[name] = model
 
-# ==================== MAIN APP ====================
-st.markdown('<h1 class="main-header">📞 Telecom Customer Churn Prediction</h1>', unsafe_allow_html=True)
-st.markdown("Analyze churn patterns, train ML models, and discover reduction strategies.")
+    # Save in session state
+    st.session_state.trained_models = trained_models
+    st.session_state.scaler = scaler
+    st.session_state.encoder = oe
+    st.session_state.cat_cols = cat_cols
+    st.session_state.X_columns = X.columns
 
-# ==================== SIDEBAR - FILE UPLOAD ====================
-with st.sidebar:
-    st.header("📂 Configuration")
-    uploaded_file = st.file_uploader("Upload TelecomCustomerChurn.csv", type=["csv"], key="file_upload")
+    # -------------------- Display Model Performance --------------------
+    st.subheader("Model Performance")
+    st.dataframe(pd.DataFrame(results).T.round(4))
 
-if uploaded_file is None:
-    st.markdown('<div class="info-box"><strong>ℹ️ Getting Started</strong><br>Upload your telecom dataset (CSV) from the sidebar to begin analysis.</div>', unsafe_allow_html=True)
-    st.stop()
+    # -------------------- Predict Individual Customer --------------------
+    st.markdown('<h2 class="section-header">Predict Individual Customer Churn</h2>', unsafe_allow_html=True)
 
-# Load data
-df = load_and_clean_data(uploaded_file)
-st.markdown('<div class="success-box">✅ Dataset loaded successfully!</div>', unsafe_allow_html=True)
+    if 'trained_models' not in st.session_state or not st.session_state.trained_models:
+        st.markdown(
+            '<div class="warning-box"><strong>Please train models first</strong> to enable predictions.</div>',
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown("Enter customer details below to predict churn risk:")
 
-# ==================== SECTION 1: DATASET OVERVIEW ====================
-st.markdown('<h2 class="section-header">🔍 Dataset Overview</h2>', unsafe_allow_html=True)
+        # --- Helper function for encoding ---
+        def encode_input(df_input, cat_cols, encoder, train_cols):
+            df_encoded = df_input.copy()
 
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.metric("📊 Total Records", f"{df.shape[0]:,}")
-with col2:
-    st.metric("📋 Features", f"{df.shape[1]}")
-with col3:
-    st.metric("⚠️ Missing Values", df.isnull().sum().sum())
-with col4:
-    st.metric("🔄 Duplicates", df.duplicated().sum())
+            # Ensure all categorical columns exist
+            for col in cat_cols:
+                if col not in df_encoded.columns:
+                    df_encoded[col] = 'missing'  # placeholder for missing categorical
 
-st.subheader("Data Preview")
-st.dataframe(df.head(10), use_container_width=True)
+            if cat_cols:
+                df_encoded[cat_cols] = encoder.transform(df_encoded[cat_cols])
 
-# ==================== SECTION 2: EDA VISUALIZATIONS ====================
-st.markdown('<h2 class="section-header">📊 Exploratory Data Analysis</h2>', unsafe_allow_html=True)
+            # Ensure all training columns exist
+            for col in train_cols:
+                if col not in df_encoded.columns:
+                    df_encoded[col] = 0  # default numeric value
 
-with st.expander("📈 Click to view EDA Charts", expanded=True):
-    fig = create_eda_visualizations(df)
-    st.pyplot(fig, use_container_width=True)
+            return df_encoded[train_cols]
 
-# ==================== SECTION 3: DATA PREPROCESSING ====================
-st.markdown('<h2 class="section-header">⚙️ Data Preprocessing</h2>', unsafe_allow_html=True)
+        # --- Prediction Form ---
+        with st.form("churn_prediction_form"):
+            col1, col2, col3 = st.columns(3)
 
-X, y, categorical_cols, oe = prepare_data(df)
-st.success(f"✅ Encoded {len(categorical_cols)} categorical columns")
+            # Demographics
+            with col1:
+                st.subheader("Demographics")
+                gender_col = 'gender' if 'gender' in df.columns else 'Gender'
+                gender = st.selectbox("Gender", df[gender_col].unique(), key="gender")
+                senior_citizen = st.selectbox("Senior Citizen", df['seniorcitizen'].unique(), key="senior")
+                partner = st.selectbox("Partner", df['partner'].unique(), key="partner")
+                dependents = st.selectbox("Dependents", df['dependents'].unique(), key="dependents")
 
-# ==================== SECTION 4: SMOTE BALANCING ====================
-st.markdown('<h2 class="section-header">⚖️ Class Balancing with SMOTE</h2>', unsafe_allow_html=True)
+            # Services
+            with col2:
+                st.subheader("Services")
+                phone_service = st.selectbox("Phone Service", df['phoneservice'].unique(), key="phone")
+                internet_service = st.selectbox("Internet Service", df['internetservice'].unique(), key="internet")
+                online_security = st.selectbox("Online Security", df['onlinesecurity'].unique(), key="security")
+                online_backup = st.selectbox("Online Backup", df['onlinebackup'].unique(), key="backup")
+                tech_support = st.selectbox("Tech Support", df['techsupport'].unique(), key="tech")
 
-smote = SMOTE(random_state=42)
-X_bal, y_bal = smote.fit_resample(X, y)
-y_bal_encoded = y_bal.apply(lambda x: 1 if x == 'Yes' else 0)
+            # Contract & Billing
+            with col3:
+                st.subheader("Contract & Billing")
+                contract = st.selectbox("Contract", df['contract'].unique(), key="contract")
+                paperless_billing = st.selectbox("Paperless Billing", df['paperlessbilling'].unique(), key="paperless")
+                payment_method = st.selectbox("Payment Method", df['paymentmethod'].unique(), key="payment")
 
-col1, col2 = st.columns(2)
-with col1:
-    st.subheader("Before SMOTE")
-    before_counts = y.value_counts()
-    st.bar_chart(before_counts)
-    
-with col2:
-    st.subheader("After SMOTE")
-    after_counts = y_bal.value_counts()
-    st.bar_chart(after_counts)
+            # Numeric inputs
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                monthly_charges = st.number_input(
+                    "Monthly Charges ($)", min_value=0.0, max_value=float(df['monthlycharges'].max()),
+                    value=float(df['monthlycharges'].mean()), step=0.01)
+            with col2:
+                total_charges = st.number_input(
+                    "Total Charges ($)", min_value=0.0, max_value=float(df['totalcharges'].max()),
+                    value=float(df['totalcharges'].mean()), step=0.01)
+            with col3:
+                tenure = st.number_input(
+                    "Tenure (Months)", min_value=0, max_value=int(df['tenure'].max()),
+                    value=int(df['tenure'].mean()), step=1)
 
-st.markdown(f'<div class="success-box">✅ Dataset balanced: {len(X):,} → {len(X_bal):,} samples</div>', unsafe_allow_html=True)
+            predict_button = st.form_submit_button("Predict Churn Risk", use_container_width=True)
 
-# ==================== SECTION 5: TRAIN-TEST SPLIT ====================
-st.markdown('<h2 class="section-header">🧪 Train-Test Split & Scaling</h2>', unsafe_allow_html=True)
+        if predict_button:
+            input_data = {
+                gender_col: gender,
+                'seniorcitizen': senior_citizen,
+                'partner': partner,
+                'dependents': dependents,
+                'tenure': tenure,
+                'phoneservice': phone_service,
+                'internetservice': internet_service,
+                'onlinesecurity': online_security,
+                'onlinebackup': online_backup,
+                'techsupport': tech_support,
+                'monthlycharges': monthly_charges,
+                'contract': contract,
+                'paperlessbilling': paperless_billing,
+                'paymentmethod': payment_method,
+                'totalcharges': total_charges
+            }
+            input_df = pd.DataFrame([input_data])
 
-X_train, X_test, y_train, y_test = train_test_split(X_bal, y_bal_encoded, test_size=0.2, random_state=42, stratify=y_bal_encoded)
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
+            # Encode & Scale
+            input_encoded = encode_input(input_df, st.session_state.cat_cols, st.session_state.encoder, st.session_state.X_columns)
+            input_scaled = st.session_state.scaler.transform(input_encoded)
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("🎯 Training Samples", f"{len(X_train):,}")
-with col2:
-    st.metric("✔️ Test Samples", f"{len(X_test):,}")
-with col3:
-    st.metric("📊 Test Size", "20%")
+            # Predict using Random Forest
+            best_model = st.session_state.trained_models["Random Forest"]
+            prediction = best_model.predict(input_scaled)[0]
+            probability = best_model.predict_proba(input_scaled)[0]
 
-# ==================== SECTION 6: MODEL TRAINING ====================
-st.markdown('<h2 class="section-header">🤖 Model Training & Evaluation</h2>', unsafe_allow_html=True)
-
-if st.button("🚀 Train Models", key="train_btn", use_container_width=True):
-    with st.spinner("🔄 Training models... this may take a moment"):
-        results = train_models(X_train_scaled, X_test_scaled, y_train, y_test)
-        
-        # Display results
-        comparison_df = pd.DataFrame({
-            k: {m: v for m, v in results[k].items() if m != 'Model'} 
-            for k in results.keys()
-        }).T
-        
-        st.subheader("📈 Model Performance Comparison")
-        st.dataframe(comparison_df.style.format("{:.4f}").highlight_max(axis=0, color='lightgreen'), use_container_width=True)
-        
-        best_model_name = comparison_df["Accuracy"].idxmax()
-        best_accuracy = comparison_df.loc[best_model_name, 'Accuracy']
-        
-        st.markdown(f'<div class="success-box">🏆 Best Model: <strong>{best_model_name}</strong> | Accuracy: <strong>{best_accuracy*100:.2f}%</strong></div>', unsafe_allow_html=True)
-        
-        # Feature Importance for Random Forest
-        if best_model_name == "Random Forest":
-            st.subheader("💡 Top 10 Feature Importances")
-            model = results["Random Forest"]["Model"]
-            importance_df = pd.DataFrame({
-                "Feature": X.columns,
-                "Importance": model.feature_importances_
-            }).sort_values(by="Importance", ascending=False).head(10)
-            
-            fig, ax = plt.subplots(figsize=(10, 6))
-            sns.barplot(x="Importance", y="Feature", data=importance_df, palette="viridis", ax=ax)
-            ax.set_title("Top 10 Feature Importances", fontweight='bold', fontsize=12)
-            st.pyplot(fig, use_container_width=True)
-
-# ==================== SECTION 7: BUSINESS INSIGHTS ====================
-st.markdown('<h2 class="section-header">📉 Churn Reduction Strategy (10% Target)</h2>', unsafe_allow_html=True)
-
-strategies = pd.DataFrame({
-    'Strategy': [
-        'Contract Type',
-        'Tenure',
-        'Monthly Charges',
-        'Tech Support',
-        'Internet Service'
-    ],
-    'Key Insight': [
-        'Month-to-month contracts = 42% churn',
-        'High churn in first 12 months',
-        'High charges linked to 45% churn',
-        'Lack of support → 30% churn',
-        'Fiber optic customers churn more (41%)'
-    ],
-    'Recommended Action': [
-        'Offer discounts for longer-term contracts',
-        'Improve onboarding and engagement',
-        'Introduce bundle offers or loyalty discounts',
-        'Promote add-ons or improve response time',
-        'Improve service quality or reliability'
-    ],
-    'Estimated Impact': [
-        '3–4%',
-        '2–3%',
-        '2–3%',
-        '1–2%',
-        '1–2%'
-    ]
-})
-
-st.dataframe(strategies, use_container_width=True, hide_index=True)
-st.markdown('<div class="success-box">✅ Combined Impact: 10–14% churn reduction possible through multi-strategy approach</div>', unsafe_allow_html=True)
-
-# ==================== FOOTER ====================
-st.markdown("---")
-st.markdown("<p style='text-align: center; color: gray;'>Telecom Churn ML Dashboard</p>", unsafe_allow_html=True)
+            # Display result
+            st.markdown("---")
+            st.markdown('<h3 style="text-align: center;">Prediction Result</h3>', unsafe_allow_html=True)
+            col1, col2 = st.columns(2)
+            with col1:
+                if prediction == 1:
+                    st.markdown(f'<div class="churn-risk-high"><h2>⚠️ HIGH CHURN RISK</h2><p style="font-size:1.2rem;">Probability: <strong>{probability[1]*100:.1f}%</strong></p></div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div class="churn-risk-low"><h2>✅ LOW CHURN RISK</h2><p style="font-size:1.2rem;">Probability: <strong>{probability[0]*100:.1f}%</strong></p></div>', unsafe_allow_html=True)
+            with col2:
+                fig, ax = plt.subplots(figsize=(6, 4))
+                labels = ['No Churn', 'Churn']
+                sizes = [probability[0]*100, probability[1]*100]
+                colors = ['#2ecc71', '#e74c3c']
+                ax.pie(sizes, labels=labels, autopct='%1.1f%%', colors=colors, startangle=90)
+                ax.set_title('Churn Probability Distribution', fontweight='bold')
+                st.pyplot(fig, use_container_width=True)
