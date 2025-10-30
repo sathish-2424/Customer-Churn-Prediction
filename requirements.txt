@@ -1,1 +1,6 @@
-!pip install scikit-learn imbalanced-learn matplotlib seaborn pandas numpy -q
+streamlit
+pandas
+numpy
+scikit-learn
+imbalanced-learn
+matplotlib
