@@ -247,14 +247,7 @@ with tab2:
         else:
             st.warning("Data insufficient for feature ranking.")
 
-    with col_explain:
-        st.info("""
-        **How to read this:**
-        
-        The longer the bar, the more 'important' that factor is to the AI model.
-        
-        For example, if **Contract** is at the top, it means the type of contract (Month-to-month vs Year) is the strongest signal for churn in your dataset.
-        """)
+
 
 # --- TAB 3: SIMULATOR ---
 with tab3:
