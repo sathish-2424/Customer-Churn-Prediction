@@ -203,7 +203,6 @@ with tab2:
     col_drivers, col_explain = st.columns([2, 1])
     
     with col_drivers:
-        st.subheader("What drives customer churn?")
         st.markdown("These are the top factors influencing customer decisions, ranked by impact.")
         
         if not feat_imp.empty:
