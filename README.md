@@ -162,3 +162,17 @@ Customer-Churn-Prediction/
   * Make data-driven decisions
 
 ---
+## 📊 Power BI Dashboard
+
+The same telecom dataset used for machine learning is also used to build an
+interactive **Power BI dashboard**.
+
+The dashboard provides:
+- Executive KPIs (Customers, Churn Rate, Retention Rate)
+- Partner-wise and region-wise churn analysis
+- Usage behavior insights
+- Customer segmentation for business decisions
+
+This ensures consistency between **business analytics** (Power BI) and
+**predictive analytics** (Machine Learning).
+
