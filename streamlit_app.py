@@ -12,7 +12,7 @@ import plotly.express as px
 import warnings
 warnings.filterwarnings("ignore")
 
-# ================= PAGE CONFIG =================
+#  PAGE CONFIG 
 st.set_page_config(
     page_title="Telecom Churn Intelligence",
     page_icon="📉",
@@ -20,7 +20,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ================= LOAD DATA =================
+#  LOAD DATA 
 @st.cache_data
 def load_data():
     df = pd.read_csv("data/telecom_churn.csv")
@@ -42,7 +42,7 @@ def load_data():
 
 df = load_data()
 
-# ================= STATE–CITY MAP =================
+#  STATE–CITY MAP 
 state_city_map = (
     df.groupby("state")["city"]
       .unique()
@@ -50,7 +50,7 @@ state_city_map = (
       .to_dict()
 )
 
-# ================= AVERAGE LOOKUP =================
+#  AVERAGE LOOKUP 
 avg_lookup = (
     df.groupby(["state", "city", "telecom_partner"])
       .agg({
@@ -71,7 +71,7 @@ global_avg = df[[
     "estimated_salary"
 ]].mean()
 
-# ================= MODEL =================
+#  MODEL 
 @st.cache_resource
 def train_model(df):
     X = df.drop(columns=["customer_id", "churn", "date_of_registration"], errors="ignore")
@@ -125,11 +125,11 @@ def train_model(df):
 
 pipeline, metrics, feat_imp = train_model(df)
 
-# ================= HEADER =================
+#  HEADER 
 st.title("📞 Telecom Customer Churn")
 st.markdown("---")
 
-# ================= KPI ROW =================
+#  KPI ROW 
 churn_rate = df["churn"].mean() * 100
 retention_rate = 100 - churn_rate
 
@@ -141,7 +141,7 @@ k4.metric("🎯 Model Accuracy", f"{metrics['accuracy']*100:.1f}%")
 
 st.markdown("---")
 
-# ================= CHURN BY PARTNER =================
+#  CHURN BY PARTNER 
 st.subheader("📉 Churn Rate by Telecom Partner")
 
 partner_churn = (
@@ -169,7 +169,7 @@ st.plotly_chart(fig_partner, use_container_width=True)
 
 st.markdown("---")
 
-# ================= SIMULATOR =================
+#  SIMULATOR 
 st.subheader("⚡ Customer Churn Risk Simulator")
 
 col1, col2 = st.columns(2)
