@@ -95,6 +95,12 @@ Customer churn is one of the biggest challenges in the telecom industry, directl
 | `estimated_salary` | Annual salary estimate | Numeric |
 | `churn` | **Target: Customer left (1) or stayed (0)** | Binary |
 
+### Target Variable - Churn Explained
+| Value | Meaning | Description |
+|-------|---------|-------------|
+| **0** | No Churn | Customer remained with the telecom provider (retained) |
+| **1** | Churn | Customer left the telecom provider (churned) |
+
 ---
 
 ## 🛠️ Tech Stack
